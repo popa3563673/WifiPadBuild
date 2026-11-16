@@ -1,0 +1,55 @@
+name: Build WifiPad APKs
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK manually
+        run: |
+          sudo mkdir -p /usr/local/lib/android/sdk/cmdline-tools
+          sudo chown -R $USER:$USER /usr/local/lib/android/sdk
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip -d /usr/local/lib/android/sdk/cmdline-tools
+          mv /usr/local/lib/android/sdk/cmdline-tools/cmdline-tools /usr/local/lib/android/sdk/cmdline-tools/latest
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "PATH=$PATH:/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_ENV
+
+      - name: Install NDK and Build Tools
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358"
+
+      - name: Setup Gradle 8.14.6
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.14.6-bin.zip
+          unzip -q gradle-8.14.6-bin.zip
+          echo "PATH=$PWD/gradle-8.14.6/bin:$PATH" >> $GITHUB_ENV
+          gradle -v
+
+      - name: Build Receiver App (TV)
+        run: |
+          rm -f app && ln -s receiver-app app
+          gradle --no-daemon --max-workers=1 :app:assembleDebug
+
+      - name: Build Controller App (Phone)
+        run: |
+          rm -f app && ln -s controller-app app
+          gradle --no-daemon --max-workers=1 :app:assembleDebug
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: WifiPad-APKs
+          path: |
+            receiver-app/build/outputs/apk/debug/*.apk
+            controller-app/build/outputs/apk/debug/*.apk
